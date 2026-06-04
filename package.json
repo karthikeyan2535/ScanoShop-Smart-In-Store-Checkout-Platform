@@ -1,0 +1,12 @@
+{
+  "name": "scanoshop",
+  "version": "1.0.0",
+  "description": "ScanoShop — Smart In-Store Checkout Platform",
+  "private": true,
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "setup": "cd backend && npm install && npm run db:generate && npm run db:push && npm run db:seed && cd ../frontend && npm install"
+  }
+}
