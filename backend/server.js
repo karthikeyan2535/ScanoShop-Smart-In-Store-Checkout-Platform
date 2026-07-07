@@ -30,8 +30,11 @@ app.use(helmet({
 }));
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
+// Strip trailing slash — browsers send origin without slash, CORS does exact match
+const clientOrigin = (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: clientOrigin,
   credentials: true,
 }));
 app.use(express.json());
