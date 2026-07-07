@@ -9,6 +9,7 @@ export const authService = {
 export const productService = {
   getAll: (params) => api.get('/products', { params }),
   getById: (id) => api.get(`/products/${id}`),
+  getByBarcode: (barcode) => api.get(`/products/barcode/${barcode}`),
   getCategories: () => api.get('/products/categories'),
   create: (data) => api.post('/products', data),
   update: (id, data) => api.put(`/products/${id}`, data),
@@ -37,4 +38,9 @@ export const adminService = {
   getStats: () => api.get('/admin/stats'),
   getAllOrders: (params) => api.get('/admin/orders', { params }),
   getLowStock: () => api.get('/admin/low-stock'),
+};
+
+export const paymentService = {
+  createOrder: () => api.post('/payments/create-order'),
+  verifyPayment: (data) => api.post('/payments/verify', data),
 };

@@ -1,33 +1,24 @@
 const prisma = require('../config/prisma');
 const { sendSuccess, sendError } = require('../utils/response');
+const { emitInventoryUpdate, emitAdminUpdate } = require('../services/socketService');
 
-/**
- * Helper: get or create cart for user
- */
-const getOrCreateCart = async (userId) => {
-  let cart = await prisma.cart.findUnique({ where: { userId } });
+const RESERVATION_MINUTES = 30;
+
+const getReservationTime = () => new Date(Date.now() + RESERVATION_MINUTES * 60000);
+
+const getOrCreateCart = async (userId, tx = prisma) => {
+  let cart = await tx.cart.findUnique({ where: { userId } });
   if (!cart) {
-    cart = await prisma.cart.create({ data: { userId } });
+    cart = await tx.cart.create({ data: { userId } });
   }
   return cart;
 };
 
-/**
- * @route GET /cart
- * @desc Get user's cart with items
- * @access Private
- */
 const getCart = async (req, res) => {
   try {
     const cart = await prisma.cart.findUnique({
       where: { userId: req.user.id },
-      include: {
-        items: {
-          include: {
-            product: true,
-          },
-        },
-      },
+      include: { items: { include: { product: true } } },
     });
 
     if (!cart) {
@@ -46,136 +37,225 @@ const getCart = async (req, res) => {
   }
 };
 
-/**
- * @route POST /cart/add
- * @desc Add item to cart (or increment quantity)
- * @access Private
- */
 const addToCart = async (req, res) => {
   try {
     const { productId, quantity = 1 } = req.body;
     const userId = req.user.id;
+    const qty = parseInt(quantity);
 
-    // Validate product exists and has stock
-    const product = await prisma.product.findUnique({ where: { id: parseInt(productId) } });
-    if (!product) return sendError(res, 'Product not found', 404);
-    if (product.stock < quantity) {
-      return sendError(res, `Insufficient stock. Available: ${product.stock}`, 400);
-    }
+    const result = await prisma.$transaction(async (tx) => {
+      const product = await tx.product.findUnique({ where: { id: parseInt(productId) } });
+      if (!product) throw new Error('Product not found');
 
-    const cart = await getOrCreateCart(userId);
+      // Atomic update to prevent negative stock
+      const updateResult = await tx.product.updateMany({
+        where: { id: product.id, availableStock: { gte: qty } },
+        data: {
+          availableStock: { decrement: qty },
+          reservedStock: { increment: qty },
+        },
+      });
 
-    // Check if item already in cart
-    const existingItem = await prisma.cartItem.findUnique({
-      where: { cartId_productId: { cartId: cart.id, productId: parseInt(productId) } },
+      if (updateResult.count === 0) {
+        throw new Error(`Insufficient stock.`);
+      }
+
+      const cart = await getOrCreateCart(userId, tx);
+      const existingItem = await tx.cartItem.findUnique({
+        where: { cartId_productId: { cartId: cart.id, productId: parseInt(productId) } },
+      });
+
+      let cartItem;
+      if (existingItem) {
+        cartItem = await tx.cartItem.update({
+          where: { id: existingItem.id },
+          data: { 
+            quantity: existingItem.quantity + qty,
+            reservedUntil: getReservationTime() 
+          },
+          include: { product: true },
+        });
+      } else {
+        cartItem = await tx.cartItem.create({
+          data: { 
+            cartId: cart.id, 
+            productId: parseInt(productId), 
+            quantity: qty,
+            reservedUntil: getReservationTime()
+          },
+          include: { product: true },
+        });
+      }
+
+      const updatedProduct = await tx.product.findUnique({ where: { id: product.id } });
+
+      return { cartItem, updatedProduct };
     });
 
-    let cartItem;
-    if (existingItem) {
-      const newQuantity = existingItem.quantity + parseInt(quantity);
-      if (product.stock < newQuantity) {
-        return sendError(res, `Insufficient stock. Available: ${product.stock}`, 400);
-      }
-      cartItem = await prisma.cartItem.update({
-        where: { id: existingItem.id },
-        data: { quantity: newQuantity },
-        include: { product: true },
-      });
-    } else {
-      cartItem = await prisma.cartItem.create({
-        data: { cartId: cart.id, productId: parseInt(productId), quantity: parseInt(quantity) },
-        include: { product: true },
-      });
-    }
+    emitInventoryUpdate(result.updatedProduct.id, result.updatedProduct.availableStock, result.updatedProduct.reservedStock);
+    emitAdminUpdate();
 
-    return sendSuccess(res, cartItem, 'Item added to cart');
+    return sendSuccess(res, result.cartItem, 'Item added to cart');
   } catch (error) {
     console.error('Add to cart error:', error);
-    return sendError(res, 'Failed to add item to cart');
+    return sendError(res, error.message || 'Failed to add item to cart', 400);
   }
 };
 
-/**
- * @route PUT /cart/update
- * @desc Update cart item quantity
- * @access Private
- */
 const updateCartItem = async (req, res) => {
   try {
     const { cartItemId, quantity } = req.body;
     const userId = req.user.id;
+    const newQty = parseInt(quantity);
 
-    const cartItem = await prisma.cartItem.findUnique({
-      where: { id: parseInt(cartItemId) },
-      include: { cart: true, product: true },
+    const result = await prisma.$transaction(async (tx) => {
+      const cartItem = await tx.cartItem.findUnique({
+        where: { id: parseInt(cartItemId) },
+        include: { cart: true, product: true },
+      });
+
+      if (!cartItem || cartItem.cart.userId !== userId) {
+        throw new Error('Cart item not found');
+      }
+
+      const qtyDifference = newQty - cartItem.quantity;
+
+      if (newQty <= 0) {
+        await tx.cartItem.delete({ where: { id: cartItem.id } });
+        const p = await tx.product.update({
+          where: { id: cartItem.productId },
+          data: {
+            availableStock: { increment: cartItem.quantity },
+            reservedStock: { decrement: cartItem.quantity },
+          },
+        });
+        return { removed: true, updatedProduct: p };
+      }
+
+      if (qtyDifference > 0) {
+        const updateResult = await tx.product.updateMany({
+          where: { id: cartItem.productId, availableStock: { gte: qtyDifference } },
+          data: {
+            availableStock: { decrement: qtyDifference },
+            reservedStock: { increment: qtyDifference },
+          },
+        });
+        if (updateResult.count === 0) {
+          throw new Error(`Insufficient stock.`);
+        }
+      }
+
+      const updated = await tx.cartItem.update({
+        where: { id: cartItem.id },
+        data: { 
+          quantity: newQty,
+          reservedUntil: getReservationTime()
+        },
+        include: { product: true },
+      });
+
+      let updatedProduct = null;
+      if (qtyDifference !== 0) {
+        if (qtyDifference < 0) {
+          updatedProduct = await tx.product.update({
+            where: { id: cartItem.productId },
+            data: {
+              availableStock: { decrement: qtyDifference }, // it's negative, so double negative is positive
+              reservedStock: { increment: qtyDifference },
+            },
+          });
+        } else {
+          updatedProduct = await tx.product.findUnique({ where: { id: cartItem.productId } });
+        }
+      }
+
+      return { updated, removed: false, updatedProduct };
     });
 
-    if (!cartItem || cartItem.cart.userId !== userId) {
-      return sendError(res, 'Cart item not found', 404);
+    if (result.updatedProduct) {
+      emitInventoryUpdate(result.updatedProduct.id, result.updatedProduct.availableStock, result.updatedProduct.reservedStock);
+      emitAdminUpdate();
     }
 
-    if (parseInt(quantity) <= 0) {
-      await prisma.cartItem.delete({ where: { id: cartItem.id } });
+    if (result.removed) {
       return sendSuccess(res, null, 'Item removed from cart');
     }
-
-    if (cartItem.product.stock < parseInt(quantity)) {
-      return sendError(res, `Insufficient stock. Available: ${cartItem.product.stock}`, 400);
-    }
-
-    const updated = await prisma.cartItem.update({
-      where: { id: cartItem.id },
-      data: { quantity: parseInt(quantity) },
-      include: { product: true },
-    });
-
-    return sendSuccess(res, updated, 'Cart updated');
+    return sendSuccess(res, result, 'Cart updated');
   } catch (error) {
     console.error('Update cart error:', error);
-    return sendError(res, 'Failed to update cart');
+    return sendError(res, error.message || 'Failed to update cart', 400);
   }
 };
 
-/**
- * @route DELETE /cart/remove/:id
- * @desc Remove item from cart
- * @access Private
- */
 const removeFromCart = async (req, res) => {
   try {
     const cartItemId = parseInt(req.params.id);
     const userId = req.user.id;
 
-    const cartItem = await prisma.cartItem.findUnique({
-      where: { id: cartItemId },
-      include: { cart: true },
+    const result = await prisma.$transaction(async (tx) => {
+      const cartItem = await tx.cartItem.findUnique({
+        where: { id: cartItemId },
+        include: { cart: true },
+      });
+
+      if (!cartItem || cartItem.cart.userId !== userId) {
+        throw new Error('Cart item not found');
+      }
+
+      await tx.cartItem.delete({ where: { id: cartItemId } });
+      const updatedProduct = await tx.product.update({
+        where: { id: cartItem.productId },
+        data: {
+          availableStock: { increment: cartItem.quantity },
+          reservedStock: { decrement: cartItem.quantity },
+        },
+      });
+      return updatedProduct;
     });
 
-    if (!cartItem || cartItem.cart.userId !== userId) {
-      return sendError(res, 'Cart item not found', 404);
-    }
+    emitInventoryUpdate(result.id, result.availableStock, result.reservedStock);
+    emitAdminUpdate();
 
-    await prisma.cartItem.delete({ where: { id: cartItemId } });
     return sendSuccess(res, null, 'Item removed from cart');
   } catch (error) {
     console.error('Remove from cart error:', error);
-    return sendError(res, 'Failed to remove item');
+    return sendError(res, error.message || 'Failed to remove item', 400);
   }
 };
 
-/**
- * @route DELETE /cart/clear
- * @desc Clear entire cart
- * @access Private
- */
 const clearCart = async (req, res) => {
   try {
-    const cart = await prisma.cart.findUnique({ where: { userId: req.user.id } });
-    if (cart) {
-      await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
+    const updatedProducts = await prisma.$transaction(async (tx) => {
+      const cart = await tx.cart.findUnique({
+        where: { userId: req.user.id },
+        include: { items: true },
+      });
+
+      const prods = [];
+      if (cart && cart.items.length > 0) {
+        for (const item of cart.items) {
+          const p = await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              availableStock: { increment: item.quantity },
+              reservedStock: { decrement: item.quantity },
+            },
+          });
+          prods.push(p);
+        }
+        await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
+      }
+      return prods;
+    });
+
+    for (const p of updatedProducts) {
+      emitInventoryUpdate(p.id, p.availableStock, p.reservedStock);
     }
+    if (updatedProducts.length > 0) emitAdminUpdate();
+
     return sendSuccess(res, null, 'Cart cleared');
   } catch (error) {
+    console.error('Clear cart error:', error);
     return sendError(res, 'Failed to clear cart');
   }
 };

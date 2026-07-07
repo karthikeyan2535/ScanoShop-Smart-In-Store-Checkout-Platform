@@ -7,14 +7,15 @@ node_modules/
 dist/
 build/
 
-# Environment files
+# Environment files – NEVER commit secrets
 .env
-.env.local
-.env.production
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
 
 # Prisma generated
 backend/node_modules/
-backend/.env
 
 # Logs
 *.log

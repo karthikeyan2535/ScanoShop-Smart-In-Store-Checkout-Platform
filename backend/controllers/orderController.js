@@ -25,10 +25,11 @@ const checkout = async (req, res) => {
         throw new Error('CART_EMPTY');
       }
 
-      // 2. Validate stock for each item
+      // 2. Validate reservations
+      const now = new Date();
       for (const item of cart.items) {
-        if (item.product.stock < item.quantity) {
-          throw new Error(`INSUFFICIENT_STOCK:${item.product.name}:${item.product.stock}`);
+        if (!item.reservedUntil || item.reservedUntil < now) {
+          throw new Error(`RESERVATION_EXPIRED:${item.product.name}`);
         }
       }
 
@@ -58,10 +59,10 @@ const checkout = async (req, res) => {
           },
         });
 
-        // Deduct stock
+        // Deduct reserved stock (item is sold)
         await tx.product.update({
           where: { id: item.productId },
-          data: { stock: { decrement: item.quantity } },
+          data: { reservedStock: { decrement: item.quantity } },
         });
       }
 
@@ -84,9 +85,9 @@ const checkout = async (req, res) => {
     if (error.message === 'CART_EMPTY') {
       return sendError(res, 'Your cart is empty', 400);
     }
-    if (error.message.startsWith('INSUFFICIENT_STOCK:')) {
+    if (error.message.startsWith('RESERVATION_EXPIRED:')) {
       const parts = error.message.split(':');
-      return sendError(res, `Insufficient stock for "${parts[1]}". Available: ${parts[2]}`, 400);
+      return sendError(res, `Reservation expired for "${parts[1]}". Please update your cart.`, 400);
     }
 
     console.error('Checkout error:', error);

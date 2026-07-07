@@ -1,18 +1,25 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, Navigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
-import { orderService } from '../services';
+import { useAuth } from '../context/AuthContext';
+import { paymentService } from '../services';
 import {
   ShoppingCart, Minus, Plus, Trash2, ArrowRight, ShoppingBag,
   Loader2, Package
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { formatINR } from '../utils/currency';
 
 const Cart = () => {
   const { cart, loading, updateItem, removeItem, clearCart, itemCount } = useCart();
+  const { isAdmin } = useAuth();
   const [checkingOut, setCheckingOut] = useState(false);
   const navigate = useNavigate();
+
+  if (isAdmin) {
+    return <Navigate to="/admin" replace />;
+  }
 
   const handleQuantityChange = async (item, delta) => {
     const newQty = item.quantity + delta;
@@ -36,12 +43,63 @@ const Cart = () => {
   const handleCheckout = async () => {
     setCheckingOut(true);
     try {
-      const res = await orderService.checkout();
-      const order = res.data.data;
-      toast.success(`Order #${order.id} placed successfully! 🎉`);
-      navigate(`/orders`);
+      // 1. Create order on backend (returns Razorpay order id)
+      const res = await paymentService.createOrder();
+      const { order, razorpayOrder } = res.data.data;
+
+      // 2. Open Razorpay checkout
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'dummy_key_id',
+        amount: razorpayOrder.amount,
+        currency: razorpayOrder.currency,
+        name: 'ScanoShop',
+        description: 'Smart In-Store Checkout',
+        order_id: razorpayOrder.id,
+        handler: async (response) => {
+          try {
+            // 3. Verify payment on success
+            const verifyData = {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              orderId: order.id,
+            };
+            await paymentService.verifyPayment(verifyData);
+            toast.success(`Payment successful! Order #${order.id} placed.`);
+            await clearCart(); // Local context state update
+            navigate(`/orders`);
+          } catch (err) {
+            toast.error(err.response?.data?.message || 'Payment verification failed');
+          }
+        },
+        theme: {
+          color: '#8b5cf6', // primary-500
+        },
+      };
+
+      if (options.key === 'dummy_key_id' || !options.key) {
+        // Mock success without opening Razorpay popup
+        setTimeout(() => {
+          options.handler({
+            razorpay_order_id: razorpayOrder.id,
+            razorpay_payment_id: `pay_mock_${Date.now()}`,
+            razorpay_signature: 'mock_signature'
+          });
+        }, 1500); // 1.5s delay to simulate network
+        return;
+      }
+
+      const rzp = new window.Razorpay(options);
+      
+      rzp.on('payment.failed', function (response) {
+        toast.error('Payment failed. Please try again.');
+        console.error(response.error);
+      });
+
+      rzp.open();
+
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Checkout failed');
+      toast.error(err.response?.data?.message || 'Failed to initiate checkout');
     } finally {
       setCheckingOut(false);
     }
@@ -93,7 +151,7 @@ const Cart = () => {
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-dark-100 text-sm truncate">{item.product.name}</h3>
                   <p className="text-xs text-dark-500 mt-0.5">{item.product.category}</p>
-                  <p className="text-primary-400 font-bold mt-1">${parseFloat(item.product.price).toFixed(2)}</p>
+                  <p className="text-primary-400 font-bold mt-1">{formatINR(item.product.price)}</p>
                 </div>
 
                 {/* Quantity controls */}
@@ -107,7 +165,7 @@ const Cart = () => {
                   <span className="w-8 text-center font-bold text-white tabular-nums">{item.quantity}</span>
                   <button
                     onClick={() => handleQuantityChange(item, 1)}
-                    disabled={item.quantity >= item.product.stock}
+                    disabled={item.quantity >= item.product.availableStock}
                     className="w-8 h-8 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg flex items-center justify-center text-dark-300 hover:text-white transition-all active:scale-90 disabled:opacity-40"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -117,7 +175,7 @@ const Cart = () => {
                 {/* Subtotal */}
                 <div className="text-right shrink-0 min-w-[70px]">
                   <p className="font-bold text-white text-sm">
-                    ${(parseFloat(item.product.price) * item.quantity).toFixed(2)}
+                    {formatINR(parseFloat(item.product.price) * item.quantity)}
                   </p>
                 </div>
 
@@ -154,7 +212,7 @@ const Cart = () => {
                 {items.map((item) => (
                   <div key={item.id} className="flex justify-between text-dark-400">
                     <span className="truncate flex-1 mr-2">{item.product.name} ×{item.quantity}</span>
-                    <span className="shrink-0">${(parseFloat(item.product.price) * item.quantity).toFixed(2)}</span>
+                    <span className="shrink-0">{formatINR(parseFloat(item.product.price) * item.quantity)}</span>
                   </div>
                 ))}
               </div>
@@ -162,15 +220,15 @@ const Cart = () => {
               <div className="border-t border-dark-700 mt-5 pt-5">
                 <div className="flex justify-between mb-1">
                   <span className="text-dark-400">Subtotal</span>
-                  <span className="text-dark-200">${parseFloat(cart.total || 0).toFixed(2)}</span>
+                  <span className="text-dark-200">{formatINR(cart.total || 0)}</span>
                 </div>
                 <div className="flex justify-between mb-1">
-                  <span className="text-dark-400">Tax (0%)</span>
-                  <span className="text-dark-200">$0.00</span>
+                  <span className="text-dark-400">GST (0%)</span>
+                  <span className="text-dark-200">₹0.00</span>
                 </div>
                 <div className="flex justify-between mt-4 pt-4 border-t border-dark-700">
                   <span className="font-bold text-white text-lg">Total</span>
-                  <span className="font-bold text-primary-400 text-lg">${parseFloat(cart.total || 0).toFixed(2)}</span>
+                  <span className="font-bold text-primary-400 text-lg">{formatINR(cart.total || 0)}</span>
                 </div>
               </div>
 

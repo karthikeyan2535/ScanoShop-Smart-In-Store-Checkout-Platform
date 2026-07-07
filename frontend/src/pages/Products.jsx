@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const EMPTY_FORM = { name: '', price: '', stock: '', barcode: '', category: '' };
+const EMPTY_FORM = { name: '', price: '', availableStock: '', barcode: '', category: '', imageUrl: '' };
 
 const Products = () => {
   const { isAdmin } = useAuth();
@@ -48,7 +48,7 @@ const Products = () => {
 
   const openModal = (product = null) => {
     setEditProduct(product);
-    setForm(product ? { name: product.name, price: product.price, stock: product.stock, barcode: product.barcode, category: product.category } : EMPTY_FORM);
+    setForm(product ? { name: product.name, price: product.price, availableStock: product.availableStock, barcode: product.barcode, category: product.category, imageUrl: product.imageUrl || '' } : EMPTY_FORM);
     setShowModal(true);
   };
 
@@ -194,31 +194,34 @@ const Products = () => {
       {/* Admin Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="glass-card w-full max-w-md p-6 animate-bounce-in">
+          <div className="glass-card w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto animate-bounce-in">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-white">{editProduct ? 'Edit Product' : 'New Product'}</h2>
               <button onClick={() => setShowModal(false)} className="btn-ghost p-2"><X className="w-5 h-5" /></button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {[
-                { key: 'name', label: 'Product Name', type: 'text', placeholder: 'e.g. iPhone 15 Pro' },
-                { key: 'barcode', label: 'Barcode', type: 'text', placeholder: 'e.g. PHONE-001' },
-                { key: 'category', label: 'Category', type: 'text', placeholder: 'e.g. Electronics' },
-                { key: 'price', label: 'Price ($)', type: 'number', placeholder: '0.00', step: '0.01', min: '0' },
-                { key: 'stock', label: 'Stock Quantity', type: 'number', placeholder: '0', min: '0' },
-              ].map(({ key, label, ...rest }) => (
-                <div key={key}>
-                  <label className="block text-sm font-medium text-dark-300 mb-1.5">{label}</label>
-                  <input
-                    className="input"
-                    value={form[key]}
-                    onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                    required
-                    {...rest}
-                  />
-                </div>
-              ))}
+            <form onSubmit={handleSubmit}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {[
+                  { key: 'name', label: 'Product Name', type: 'text', placeholder: 'e.g. iPhone 15 Pro', className: 'sm:col-span-2' },
+                  { key: 'barcode', label: 'Barcode', type: 'text', placeholder: 'e.g. PHONE-001' },
+                  { key: 'category', label: 'Category', type: 'text', placeholder: 'e.g. Electronics' },
+                  { key: 'price', label: 'Price (₹)', type: 'number', placeholder: '0.00', step: '0.01', min: '0' },
+                  { key: 'availableStock', label: 'Stock', type: 'number', placeholder: '0', min: '0' },
+                  { key: 'imageUrl', label: 'Image URL (optional)', type: 'text', placeholder: 'https://...', required: false, className: 'sm:col-span-2' },
+                ].map(({ key, label, required = true, className = '', ...rest }) => (
+                  <div key={key} className={className}>
+                    <label className="block text-sm font-medium text-dark-300 mb-1.5">{label}</label>
+                    <input
+                      className="input"
+                      value={form[key]}
+                      onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                      required={required}
+                      {...rest}
+                    />
+                  </div>
+                ))}
+              </div>
 
               <div className="flex gap-3 mt-6">
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1">Cancel</button>

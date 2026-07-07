@@ -4,6 +4,7 @@ const { body } = require('express-validator');
 const {
   getProducts,
   getProductById,
+  getProductByBarcode,
   createProduct,
   updateProduct,
   deleteProduct,
@@ -16,6 +17,7 @@ const { validate } = require('../middleware/validate');
 router.use(authenticate);
 
 router.get('/categories', getCategories);
+router.get('/barcode/:barcode', getProductByBarcode);
 router.get('/', getProducts);
 router.get('/:id', getProductById);
 
@@ -29,6 +31,7 @@ router.post(
     body('stock').isInt({ min: 0 }).withMessage('Valid stock required'),
     body('barcode').trim().notEmpty().withMessage('Barcode required'),
     body('category').trim().notEmpty().withMessage('Category required'),
+    body('imageUrl').optional({ checkFalsy: true }).isURL().withMessage('Valid image URL required'),
   ],
   validate,
   createProduct

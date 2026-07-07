@@ -9,6 +9,7 @@ import {
   TrendingUp, RefreshCw, ChevronDown, ChevronUp
 } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { formatINR } from '../utils/currency';
 import toast from 'react-hot-toast';
 
 const statusConfig = {
@@ -97,7 +98,7 @@ const AdminDashboard = () => {
 
   const lowStockData = stats?.lowStockProducts?.slice(0, 8).map((p) => ({
     name: p.name.length > 12 ? p.name.substring(0, 12) + '…' : p.name,
-    stock: p.stock,
+    stock: p.availableStock,
   })) || [];
 
   return (
@@ -119,7 +120,7 @@ const AdminDashboard = () => {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-5 mb-8">
         <StatCard
           icon={Package}
           label="Total Products"
@@ -142,8 +143,16 @@ const AdminDashboard = () => {
         <StatCard
           icon={DollarSign}
           label="Total Revenue"
-          value={`$${(stats?.totalRevenue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          value={formatINR(stats?.totalRevenue || 0, true)}
+          sub={`${stats?.successfulPayments || 0} successful, ${stats?.failedPayments || 0} failed payments`}
           color="yellow"
+        />
+        <StatCard
+          icon={RefreshCw}
+          label="Redis Cache"
+          value={`${stats?.cacheStats?.hits || 0} Hits`}
+          sub={`${stats?.cacheStats?.misses || 0} Misses`}
+          color="primary"
         />
       </div>
 
@@ -264,7 +273,7 @@ const AdminDashboard = () => {
                             </div>
                           </td>
                           <td>{order.items.length} item{order.items.length !== 1 ? 's' : ''}</td>
-                          <td className="font-bold text-white">${parseFloat(order.totalPrice).toFixed(2)}</td>
+                          <td className="font-bold text-white">{formatINR(order.totalPrice)}</td>
                           <td><span className={cls}>{label}</span></td>
                           <td className="text-dark-500 text-xs">
                             {new Date(order.createdAt).toLocaleDateString()}
@@ -285,7 +294,7 @@ const AdminDashboard = () => {
                                 {order.items.map((item) => (
                                   <div key={item.id} className="flex justify-between text-dark-300">
                                     <span>{item.product?.name} × {item.quantity}</span>
-                                    <span>${(parseFloat(item.price) * item.quantity).toFixed(2)}</span>
+                                    <span>{formatINR(parseFloat(item.price) * item.quantity)}</span>
                                   </div>
                                 ))}
                               </div>

@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { orderService } from '../services';
-import { ClipboardList, ChevronDown, ChevronUp, Package, Calendar, DollarSign } from 'lucide-react';
+import { ClipboardList, ChevronDown, ChevronUp, Package, Calendar, IndianRupee } from 'lucide-react';
+import { formatINR } from '../utils/currency';
 import LoadingSpinner from '../components/LoadingSpinner';
 import toast from 'react-hot-toast';
 
@@ -11,10 +14,15 @@ const statusConfig = {
 };
 
 const Orders = () => {
+  const { isAdmin } = useAuth();
   const [orders, setOrders] = useState([]);
   const [pagination, setPagination] = useState({ total: 0, page: 1, totalPages: 1 });
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
+
+  if (isAdmin) {
+    return <Navigate to="/admin" replace />;
+  }
 
   const fetchOrders = useCallback(async (page = 1) => {
     setLoading(true);
@@ -77,7 +85,7 @@ const Orders = () => {
                     <div className="flex items-center gap-3 mt-1 text-xs text-dark-500">
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {new Date(order.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {new Date(order.createdAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </span>
                       <span>·</span>
                       <span>{order.items.length} item{order.items.length !== 1 ? 's' : ''}</span>
@@ -85,7 +93,7 @@ const Orders = () => {
                   </div>
 
                   <div className="text-right shrink-0">
-                    <p className="font-bold text-white text-lg">${parseFloat(order.totalPrice).toFixed(2)}</p>
+                    <p className="font-bold text-white text-lg">{formatINR(order.totalPrice)}</p>
                   </div>
 
                   {isExpanded
@@ -106,15 +114,15 @@ const Orders = () => {
                             <p className="text-xs text-dark-500">{item.product?.category} · Qty: {item.quantity}</p>
                           </div>
                           <div className="text-right">
-                            <p className="text-sm font-bold text-white">${(parseFloat(item.price) * item.quantity).toFixed(2)}</p>
-                            <p className="text-xs text-dark-500">${parseFloat(item.price).toFixed(2)} each</p>
+                            <p className="text-sm font-bold text-white">{formatINR(parseFloat(item.price) * item.quantity)}</p>
+                            <p className="text-xs text-dark-500">{formatINR(item.price)} each</p>
                           </div>
                         </div>
                       ))}
                     </div>
                     <div className="flex justify-between mt-4 pt-3 border-t border-dark-700">
                       <span className="font-bold text-dark-300">Total</span>
-                      <span className="font-bold text-primary-400">${parseFloat(order.totalPrice).toFixed(2)}</span>
+                      <span className="font-bold text-primary-400">{formatINR(order.totalPrice)}</span>
                     </div>
                   </div>
                 )}

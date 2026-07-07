@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
+  provider     = "mysql"
+  url          = env("DATABASE_URL")
+  relationMode = "prisma"
 }
 
 enum Role {
@@ -16,6 +17,13 @@ enum OrderStatus {
   PENDING
   COMPLETED
   FAILED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
 }
 
 model User {
@@ -33,13 +41,15 @@ model User {
 }
 
 model Product {
-  id        Int      @id @default(autoincrement())
-  name      String
-  price     Decimal  @db.Decimal(10, 2)
-  stock     Int      @default(0)
-  barcode   String   @unique
-  category  String
-  createdAt DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  name           String
+  price          Decimal  @db.Decimal(10, 2)
+  availableStock Int      @default(0)
+  reservedStock  Int      @default(0)
+  barcode        String   @unique
+  category       String
+  imageUrl       String?  @db.Text
+  createdAt      DateTime @default(now())
 
   cartItems  CartItem[]
   orderItems OrderItem[]
@@ -50,9 +60,9 @@ model Product {
 }
 
 model Cart {
-  id     Int    @id @default(autoincrement())
-  userId Int    @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     Int  @id @default(autoincrement())
+  userId Int  @unique
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   items CartItem[]
 
@@ -60,16 +70,18 @@ model Cart {
 }
 
 model CartItem {
-  id        Int     @id @default(autoincrement())
-  cartId    Int
-  productId Int
-  quantity  Int     @default(1)
+  id            Int       @id @default(autoincrement())
+  cartId        Int
+  productId     Int
+  quantity      Int       @default(1)
+  reservedUntil DateTime?
 
   cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([cartId, productId])
   @@index([cartId])
+  @@index([productId])
   @@map("cart_items")
 }
 
@@ -80,8 +92,9 @@ model Order {
   status     OrderStatus @default(PENDING)
   createdAt  DateTime    @default(now())
 
-  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items OrderItem[]
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items   OrderItem[]
+  payment Payment?
 
   @@index([userId])
   @@map("orders")
@@ -98,5 +111,21 @@ model OrderItem {
   product Product @relation(fields: [productId], references: [id])
 
   @@index([orderId])
+  @@index([productId])
   @@map("order_items")
+}
+
+model Payment {
+  id                Int           @id @default(autoincrement())
+  orderId           Int           @unique
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("INR")
+  status            PaymentStatus @default(PENDING)
+  createdAt         DateTime      @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
 }

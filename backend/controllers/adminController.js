@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { sendSuccess, sendError } = require('../utils/response');
+const { getCacheStats } = require('../services/cacheService');
 
 /**
  * @route GET /admin/stats
@@ -16,6 +17,8 @@ const getStats = async (req, res) => {
       lowStockProducts,
       recentOrders,
       ordersByStatus,
+      successfulPayments,
+      failedPayments,
     ] = await Promise.all([
       prisma.product.count(),
       prisma.order.count({ where: { status: 'COMPLETED' } }),
@@ -25,8 +28,8 @@ const getStats = async (req, res) => {
         where: { status: 'COMPLETED' },
       }),
       prisma.product.findMany({
-        where: { stock: { lte: 10 } },
-        orderBy: { stock: 'asc' },
+        where: { availableStock: { lte: 10 } },
+        orderBy: { availableStock: 'asc' },
         take: 10,
       }),
       prisma.order.findMany({
@@ -38,6 +41,8 @@ const getStats = async (req, res) => {
         by: ['status'],
         _count: { id: true },
       }),
+      prisma.payment.count({ where: { status: 'SUCCESS' } }),
+      prisma.payment.count({ where: { status: 'FAILED' } }),
     ]);
 
     const totalRevenue = parseFloat(revenueResult._sum.totalPrice || 0);
@@ -50,6 +55,9 @@ const getStats = async (req, res) => {
       lowStockProducts,
       recentOrders,
       ordersByStatus,
+      successfulPayments,
+      failedPayments,
+      cacheStats: getCacheStats(),
     });
   } catch (error) {
     console.error('Admin stats error:', error);
@@ -110,8 +118,8 @@ const getLowStock = async (req, res) => {
   try {
     const threshold = parseInt(req.query.threshold) || 10;
     const products = await prisma.product.findMany({
-      where: { stock: { lte: threshold } },
-      orderBy: { stock: 'asc' },
+      where: { availableStock: { lte: threshold } },
+      orderBy: { availableStock: 'asc' },
     });
     return sendSuccess(res, products);
   } catch (error) {

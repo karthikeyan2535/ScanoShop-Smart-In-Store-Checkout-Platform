@@ -21,8 +21,9 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS products (
   id        INT AUTO_INCREMENT PRIMARY KEY,
   name      VARCHAR(255) NOT NULL,
-  price     DECIMAL(10,2) NOT NULL,
-  stock     INT DEFAULT 0,
+  price          DECIMAL(10,2) NOT NULL,
+  availableStock INT DEFAULT 0,
+  reservedStock  INT DEFAULT 0,
   barcode   VARCHAR(100) NOT NULL UNIQUE,
   category  VARCHAR(100) NOT NULL,
   createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -42,7 +43,8 @@ CREATE TABLE IF NOT EXISTS cart_items (
   id        INT AUTO_INCREMENT PRIMARY KEY,
   cartId    INT NOT NULL,
   productId INT NOT NULL,
-  quantity  INT DEFAULT 1,
+  quantity      INT DEFAULT 1,
+  reservedUntil DATETIME NULL,
   UNIQUE KEY uq_cart_product (cartId, productId),
   INDEX idx_cart_id (cartId),
   CONSTRAINT fk_ci_cart    FOREIGN KEY (cartId)    REFERENCES carts(id)    ON DELETE CASCADE,
@@ -71,3 +73,17 @@ CREATE TABLE IF NOT EXISTS order_items (
   CONSTRAINT fk_oi_order   FOREIGN KEY (orderId)   REFERENCES orders(id)   ON DELETE CASCADE,
   CONSTRAINT fk_oi_product FOREIGN KEY (productId) REFERENCES products(id)
 ) ENGINE=InnoDB;
+
+-- Payments
+CREATE TABLE IF NOT EXISTS payments (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  orderId           INT NOT NULL UNIQUE,
+  razorpayOrderId   VARCHAR(255) NULL,
+  razorpayPaymentId VARCHAR(255) NULL,
+  amount            DECIMAL(10,2) NOT NULL,
+  currency          VARCHAR(10) DEFAULT 'INR',
+  status            ENUM('PENDING','SUCCESS','FAILED','REFUNDED') DEFAULT 'PENDING',
+  createdAt         DATETIME DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_payment_order FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+

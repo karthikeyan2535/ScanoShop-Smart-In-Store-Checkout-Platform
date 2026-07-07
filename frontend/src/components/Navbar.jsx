@@ -24,7 +24,7 @@ const Navbar = () => {
   const navLinks = [
     { to: '/products', label: 'Products', icon: Package },
     { to: '/scan', label: 'Scan', icon: ScanLine },
-    { to: '/orders', label: 'Orders', icon: ClipboardList },
+    ...(isAdmin ? [] : [{ to: '/orders', label: 'Orders', icon: ClipboardList }]),
     ...(isAdmin ? [{ to: '/admin', label: 'Dashboard', icon: LayoutDashboard }] : []),
   ];
 
@@ -37,7 +37,7 @@ const Navbar = () => {
             <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-accent-500 rounded-lg flex items-center justify-center group-hover:shadow-glow transition-all duration-300">
               <Zap className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-lg gradient-text">SmartShop</span>
+            <span className="font-bold text-lg gradient-text">ScanoShop</span>
           </Link>
 
           {/* Nav Links */}
@@ -61,22 +61,24 @@ const Navbar = () => {
           {/* Right side */}
           <div className="flex items-center gap-3">
             {/* Cart button */}
-            <Link
-              to="/cart"
-              className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
-                isActive('/cart')
-                  ? 'bg-primary-600/20 text-primary-400 border border-primary-500/30'
-                  : 'text-dark-400 hover:text-dark-100 hover:bg-dark-700/50'
-              }`}
-            >
-              <ShoppingCart className="w-4 h-4" />
-              <span className="hidden sm:inline">Cart</span>
-              {itemCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-primary-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center animate-bounce-in">
-                  {itemCount > 99 ? '99+' : itemCount}
-                </span>
-              )}
-            </Link>
+            {!isAdmin && (
+              <Link
+                to="/cart"
+                className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+                  isActive('/cart')
+                    ? 'bg-primary-600/20 text-primary-400 border border-primary-500/30'
+                    : 'text-dark-400 hover:text-dark-100 hover:bg-dark-700/50'
+                }`}
+              >
+                <ShoppingCart className="w-4 h-4" />
+                <span className="hidden sm:inline">Cart</span>
+                {itemCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-primary-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center animate-bounce-in">
+                    {itemCount > 99 ? '99+' : itemCount}
+                  </span>
+                )}
+              </Link>
+            )}
 
             {/* User dropdown */}
             <div className="relative">
