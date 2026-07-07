@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider     = "mysql"
-  url          = env("DATABASE_URL")
-  relationMode = "prisma"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum Role {
@@ -48,7 +47,7 @@ model Product {
   reservedStock  Int      @default(0)
   barcode        String   @unique
   category       String
-  imageUrl       String?  @db.Text
+  imageUrl       String?
   createdAt      DateTime @default(now())
 
   cartItems  CartItem[]
